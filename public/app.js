@@ -2,10 +2,11 @@ const tokenKey = 'beckzodiy_admin_key'
 const $ = (selector, root = document) => root.querySelector(selector)
 const adminToken = () => localStorage.getItem(tokenKey) || ''
 let lastEditorRange = null
+let editorDirty = false
+let draftTimer = 0
 
 document.addEventListener('DOMContentLoaded', async () => {
   if (document.body.hasAttribute('data-admin-page')) await loadAdmin()
-  else if (location.pathname === '/') await loadIndex()
 })
 
 async function api(path, options = {}) {
@@ -18,36 +19,6 @@ async function api(path, options = {}) {
     throw new Error(data.error || `Request failed (${response.status})`)
   }
   return response.status === 204 ? null : response.json()
-}
-
-async function loadIndex() {
-  const list = $('[data-list]')
-  const form = $('[data-search]')
-  form.addEventListener('submit', async event => {
-    event.preventDefault()
-    const query = new FormData(event.currentTarget).get('q').trim()
-    if (query.length < 2) return
-    history.replaceState(null, '', `/?q=${encodeURIComponent(query)}`)
-    await performPublicSearch(query)
-  })
-  const initialQuery = new URLSearchParams(location.search).get('q')?.trim()
-  if (initialQuery) { form.elements.q.value = initialQuery; await performPublicSearch(initialQuery) }
-  else list.innerHTML = ''
-}
-
-async function performPublicSearch(query) {
-  const list = $('[data-list]')
-  $('[data-results]').hidden = false
-  document.body.classList.add('has-results')
-  list.innerHTML = '<p class="muted">Searching…</p>'
-  try {
-    const { articles } = await api(`/api/search?q=${encodeURIComponent(query)}`)
-    list.innerHTML = articles.length ? `<p class="search-summary">Results from beckzodiy.com</p>${renderArticleLinks(articles)}` : `<p class="muted">No articles found for “${escapeText(query)}”.</p>`
-  } catch (error) { list.innerHTML = `<p class="muted">${escapeText(error.message)}</p>` }
-}
-
-function renderArticleLinks(articles) {
-  return articles.map(a => `<a href="/${encodeURIComponent(a.slug)}"><h2>${escapeText(a.title)}</h2><p class="article-meta">${escapeText(a.author || 'Anonymous')} · ${formatDate(a.created_at)}</p></a>`).join('')
 }
 
 async function loadAdmin() {
@@ -70,7 +41,7 @@ async function loadAdminArticles(query = '') {
   try {
     const { articles } = await api(query.length >= 2 ? `/api/search?q=${encodeURIComponent(query)}` : '/api/articles')
     list.innerHTML = articles.length ? articles.map(a => `<div class="admin-row"><a href="/${encodeURIComponent(a.slug)}"><h2>${escapeText(a.title)}</h2><p class="article-meta">${escapeText(a.author || 'Anonymous')} · ${formatDate(a.created_at)}</p></a><div><button data-edit="${escapeText(a.slug)}">Edit</button><button class="danger" data-delete="${escapeText(a.slug)}">Delete</button></div></div>`).join('') : '<p class="muted">Nothing published yet.</p>'
-    list.querySelectorAll('[data-edit]').forEach(button => button.onclick = async () => { const { article } = await api(`/api/articles/${encodeURIComponent(button.dataset.edit)}`); openEditor(article) })
+    list.querySelectorAll('[data-edit]').forEach(button => button.onclick = async () => { try { const { article } = await api(`/api/articles/${encodeURIComponent(button.dataset.edit)}`); openEditor(article) } catch (error) { alert(error.message) } })
     list.querySelectorAll('[data-delete]').forEach(button => button.onclick = async () => { if (!confirm('Delete this article permanently?')) return; try { await api(`/api/articles/${encodeURIComponent(button.dataset.delete)}`, { method:'DELETE' }); await loadAdminArticles() } catch (error) { alert(error.message) } })
   } catch (error) { list.innerHTML = `<p class="muted">${escapeText(error.message)}</p>` }
 }
@@ -91,10 +62,27 @@ function showLogin(message = '') {
 
 function openEditor(article = null) {
   document.title = article ? `Edit ${article.title}` : 'New article'
-  document.body.innerHTML = `<header class="site-head"><a href="/">beckzodiy.com</a><div class="head-actions"><button class="theme-toggle" data-editor-theme aria-label="Switch color theme">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</button><button class="quiet" data-exit>Exit</button></div></header><main class="editor"><div class="toolbar"><button type="button" data-cmd="bold" title="Bold"><b>B</b></button><button type="button" data-cmd="italic" title="Italic"><i>I</i></button><button type="button" data-cmd="formatBlock" data-value="h2" title="Heading">H2</button><button type="button" data-quote title="Toggle quote">“</button><button type="button" data-link>Link</button><label class="color-tool" title="Text color"><span>A</span><input type="color" data-color value="#2b6cb0"></label><button type="button" data-image>Image</button></div><div class="editor-title" contenteditable="true" data-placeholder="Title"></div><div class="editor-author" contenteditable="true" data-placeholder="Your name"></div><div class="editor-body story" contenteditable="true" data-placeholder="Your story…"></div><footer class="editor-footer"><button class="primary" data-publish>${article ? 'Save changes' : 'Publish'}</button><span class="status" data-status></span></footer></main>`
+  document.body.innerHTML = `<header class="site-head"><a href="/">beckzodiy.com</a><div class="head-actions"><button class="theme-toggle" data-editor-theme aria-label="Switch color theme">${document.documentElement.dataset.theme === 'dark' ? '☀' : '☾'}</button><button class="quiet" data-exit>Exit</button></div></header><main class="editor"><div class="toolbar"><button type="button" data-cmd="bold" title="Bold"><b>B</b></button><button type="button" data-cmd="italic" title="Italic"><i>I</i></button><button type="button" data-cmd="formatBlock" data-value="h2" title="Heading">H2</button><button type="button" data-cmd="formatBlock" data-value="h3" title="Subheading">H3</button><button type="button" data-cmd="insertUnorderedList" title="Bulleted list">•</button><button type="button" data-cmd="insertOrderedList" title="Numbered list">1.</button><button type="button" data-quote title="Toggle quote">“</button><button type="button" data-link>Link</button><label class="color-tool" title="Text color"><span>A</span><input type="color" data-color value="#2b6cb0"></label><button type="button" data-image>Image</button><button type="button" data-cmd="removeFormat" title="Clear formatting">⌫</button></div><div class="editor-title" contenteditable="true" data-placeholder="Title"></div><div class="editor-author" contenteditable="true" data-placeholder="Your name"></div><div class="editor-body story" contenteditable="true" data-placeholder="Your story…"></div><footer class="editor-footer"><button class="primary" data-publish>${article ? 'Save changes' : 'Publish'}</button><span class="status" data-status></span></footer></main>`
   $('.editor-title').textContent = article?.title || ''
   $('.editor-author').textContent = article?.author || ''
   $('.editor-body').innerHTML = article?.content_html || ''
+  const draftKey = `beckzodiy_draft_${article?.slug || 'new'}`
+  const draft = readDraft(draftKey)
+  if (draft && (draft.title !== $('.editor-title').textContent || draft.author !== $('.editor-author').textContent || draft.html !== $('.editor-body').innerHTML)) {
+    if (confirm('Restore your unsaved draft?')) {
+      $('.editor-title').textContent = draft.title; $('.editor-author').textContent = draft.author; $('.editor-body').innerHTML = draft.html
+      editorDirty = true
+    } else localStorage.removeItem(draftKey)
+  }
+  $('.editor').addEventListener('input', () => {
+    editorDirty = true
+    clearTimeout(draftTimer)
+    draftTimer = setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify({ title: $('.editor-title').textContent, author: $('.editor-author').textContent, html: $('.editor-body').innerHTML })); $('[data-status]').textContent = 'Draft saved' } catch {}
+    }, 800)
+  })
+  window.onbeforeunload = event => { if (editorDirty) event.preventDefault() }
+  document.onkeydown = event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveArticle(article, draftKey) } }
   $('[data-exit]').onclick = () => location.href = '/admin1225'
   $('[data-editor-theme]').onclick = event => {
     const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'
@@ -107,20 +95,28 @@ function openEditor(article = null) {
   $('[data-link]').onclick = addLink
   $('[data-color]').addEventListener('input', event => runCommand('foreColor', event.target.value))
   $('[data-image]').onclick = chooseImage
-  $('[data-publish]').onclick = () => saveArticle(article)
+  $('[data-publish]').onclick = () => saveArticle(article, draftKey)
   setupImageDrops($('.editor-body'))
   document.addEventListener('selectionchange', rememberEditorSelection)
   $('.editor-title').focus()
 }
 
-async function saveArticle(existing) {
-  const status = $('[data-status]'); status.textContent = 'Saving…'
+function readDraft(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') } catch { return null }
+}
+
+async function saveArticle(existing, draftKey) {
+  const status = $('[data-status]'); const button = $('[data-publish]')
+  if (button.disabled) return
+  if (!$('.editor-title').innerText.trim()) { status.textContent = 'Add a title first'; $('.editor-title').focus(); return }
+  button.disabled = true; status.textContent = 'Saving…'
   const payload = { title: $('.editor-title').innerText.trim(), author: $('.editor-author').innerText.trim(), content_html: cleanEditorHtml($('.editor-body').innerHTML), slug: existing?.slug }
   try {
     const path = existing ? `/api/articles/${encodeURIComponent(existing.slug)}` : '/api/articles'
     const { article } = await api(path, { method: existing ? 'PUT' : 'POST', body:JSON.stringify(payload) })
-    location.href = `/${article.slug}`
-  } catch (error) { status.textContent = error.message }
+    clearTimeout(draftTimer); localStorage.removeItem(draftKey); editorDirty = false
+    location.href = `/${encodeURIComponent(article.slug)}`
+  } catch (error) { status.textContent = error.message; button.disabled = false }
 }
 
 function chooseImage() {

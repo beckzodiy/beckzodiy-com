@@ -30,13 +30,14 @@ printf 'ADMIN_SECRET_KEY="choose-a-local-secret"\n' > .dev.vars
 npm run dev
 ```
 
-The `.dev.vars` file is ignored by Git. Open the local URL, select **Admin**, and enter the same key. The key stays only in browser `localStorage` and is sent as a Bearer token for writes.
+The `.dev.vars` file is ignored by Git. Open `/admin1225` on the local URL and enter the same key. The key stays only in browser `localStorage` and is sent as a Bearer token for writes.
 
 ## API
 
 - `GET /api/articles` and `GET /api/articles/:slug` are public.
 - `POST /api/articles`, `PUT /api/articles/:slug`, `DELETE /api/articles/:slug`, and `POST /api/upload` require `Authorization: Bearer <ADMIN_SECRET_KEY>`.
 - Images are capped at 10 MB and served through `/media/*` from the private R2 binding.
-- `/sitemap.xml` and `/robots.txt` are generated dynamically.
+- `/sitemap.xml`, `/feed.xml` (RSS) and `/robots.txt` are generated dynamically.
+- The home page (`/`, `/?q=…`, `/?page=N`) and article pages are server-rendered; `www` redirects to the apex domain.
 
 Article HTML is sanitized in the editor before saving. For a public multi-admin deployment, add server-side HTML sanitization and replace the shared secret with Cloudflare Access or an identity provider.
