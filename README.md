@@ -21,6 +21,10 @@ npm run deploy
 
 To attach `beckzodiy.com`, add a Worker custom domain in the Cloudflare dashboard (Workers & Pages → this Worker → Settings → Domains & Routes). Ensure the domain is active in the same Cloudflare account.
 
+## Automatic deploys
+
+Every push to `main` runs `.github/workflows/deploy.yml`, which typechecks and runs `wrangler deploy`. It needs one repository secret, `CLOUDFLARE_API_TOKEN` (GitHub → Settings → Secrets and variables → Actions), created from Cloudflare's **Edit Cloudflare Workers** token template.
+
 ## Local development
 
 ```bash
