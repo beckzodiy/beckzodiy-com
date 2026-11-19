@@ -1,3 +1,5 @@
+import { renderStats } from '/stats.js'
+
 const tokenKey = 'beckzodiy_admin_key'
 const $ = (selector, root = document) => root.querySelector(selector)
 const adminToken = () => localStorage.getItem(tokenKey) || ''
@@ -33,14 +35,29 @@ async function loadAdmin() {
     await loadAdminArticles(new FormData(event.currentTarget).get('q').trim())
   })
   $('[data-admin-search] input').addEventListener('search', event => { if (!event.currentTarget.value) loadAdminArticles() })
+  $('[data-admin-search]').hidden = false
+  setupTabs()
   await loadAdminArticles()
+}
+
+function setupTabs() {
+  const tabs = $('[data-tabs]'); tabs.hidden = false
+  let statsLoaded = false
+  const select = name => {
+    tabs.querySelectorAll('[data-tab]').forEach(t => t.setAttribute('aria-selected', t.dataset.tab === name))
+    document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== name)
+    localStorage.setItem('beckzodiy_admin_tab', name)
+    if (name === 'stats' && !statsLoaded) { statsLoaded = true; renderStats($('[data-panel="stats"]'), api) }
+  }
+  tabs.querySelectorAll('[data-tab]').forEach(t => t.onclick = () => select(t.dataset.tab))
+  select(localStorage.getItem('beckzodiy_admin_tab') || 'stats')
 }
 
 async function loadAdminArticles(query = '') {
   const list = $('[data-list]')
   try {
     const { articles } = await api(query.length >= 2 ? `/api/search?q=${encodeURIComponent(query)}` : '/api/articles')
-    list.innerHTML = articles.length ? articles.map(a => `<div class="admin-row"><a href="/${encodeURIComponent(a.slug)}"><h2>${escapeText(a.title)}</h2><p class="article-meta">${escapeText(a.author || 'Anonymous')} · ${formatDate(a.created_at)}</p></a><div><button data-edit="${escapeText(a.slug)}">Edit</button><button class="danger" data-delete="${escapeText(a.slug)}">Delete</button></div></div>`).join('') : '<p class="muted">Nothing published yet.</p>'
+    list.innerHTML = articles.length ? articles.map(a => `<div class="admin-row"><a href="/${encodeURIComponent(a.slug)}"><h2>${escapeText(a.title)}</h2><p class="article-meta">${escapeText(a.author || 'Anonymous')} · ${formatDate(a.created_at)}${a.views != null ? ` · ${Number(a.views).toLocaleString('en-US')} views` : ''}</p></a><div><button data-edit="${escapeText(a.slug)}">Edit</button><button class="danger" data-delete="${escapeText(a.slug)}">Delete</button></div></div>`).join('') : '<p class="muted">Nothing published yet.</p>'
     list.querySelectorAll('[data-edit]').forEach(button => button.onclick = async () => { try { const { article } = await api(`/api/articles/${encodeURIComponent(button.dataset.edit)}`); openEditor(article) } catch (error) { alert(error.message) } })
     list.querySelectorAll('[data-delete]').forEach(button => button.onclick = async () => { if (!confirm('Delete this article permanently?')) return; try { await api(`/api/articles/${encodeURIComponent(button.dataset.delete)}`, { method:'DELETE' }); await loadAdminArticles() } catch (error) { alert(error.message) } })
   } catch (error) { list.innerHTML = `<p class="muted">${escapeText(error.message)}</p>` }
