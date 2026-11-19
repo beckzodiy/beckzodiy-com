@@ -20,12 +20,19 @@ type Article = {
   updated_at: string
 }
 
-type ArticleSummary = Pick<Article, 'title' | 'slug' | 'author' | 'created_at'> & { excerpt_html: string }
+type ArticleSummary = Pick<Article, 'title' | 'slug' | 'author' | 'created_at'> & { excerpt_html: string; views?: number }
 
 const SITE_NAME = 'beckzodiy.com'
 const SITE_DESCRIPTION = 'Writing and ideas from beckzodiy.com'
 const PAGE_SIZE = 20
 const RESERVED_SLUGS = new Set(['admin1225', 'api', 'media'])
+const BOT_UA = /bot|crawl|spider|slurp|preview|facebookexternalhit|headless|lighthouse|monitor|curl|wget|python|axios/i
+const STATS_SCHEMA = [
+  'CREATE TABLE IF NOT EXISTS view_totals (slug TEXT PRIMARY KEY, views INTEGER NOT NULL DEFAULT 0)',
+  'CREATE TABLE IF NOT EXISTS view_daily (day TEXT NOT NULL, slug TEXT NOT NULL, views INTEGER NOT NULL DEFAULT 0, visitors INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, slug))',
+  'CREATE TABLE IF NOT EXISTS view_sources (day TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL, views INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, kind, value))',
+  'CREATE TABLE IF NOT EXISTS view_visitors (day TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY (day, hash))',
+]
 const ADSENSE = '<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9358054569018430" crossorigin="anonymous"></script>'
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -43,6 +50,13 @@ app.use('*', async (c, next) => {
 })
 
 app.use('/api/*', cors({ origin: '*', allowHeaders: ['Content-Type', 'Authorization'], allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }))
+
+// Stats tables are created on first use, so deploys need no manual migration.
+let statsReady: Promise<unknown> | null = null
+function ensureStats(db: D1Database) {
+  statsReady ??= db.batch(STATS_SCHEMA.map((sql) => db.prepare(sql))).catch((error) => { statsReady = null; throw error })
+  return statsReady
+}
 
 const jsonError = (message: string, status: 400 | 401 | 404 | 409 | 500 = 400) =>
   new Response(JSON.stringify({ error: message }), { status, headers: { 'content-type': 'application/json' } })
@@ -72,9 +86,10 @@ app.use('/api/articles', async (c, next) => c.req.method === 'GET' ? next() : re
 app.use('/api/articles/*', async (c, next) => c.req.method === 'GET' ? next() : requireAdmin(c, next))
 
 app.get('/api/articles', async (c) => {
+  await ensureStats(c.env.DB)
   const result = await c.env.DB.prepare(
-    'SELECT id, title, slug, author, created_at, updated_at FROM articles ORDER BY created_at DESC'
-  ).all<Omit<Article, 'content_html'>>()
+    'SELECT a.id, a.title, a.slug, a.author, a.created_at, a.updated_at, COALESCE(v.views, 0) AS views FROM articles a LEFT JOIN view_totals v ON v.slug = a.slug ORDER BY a.created_at DESC'
+  ).all<Omit<Article, 'content_html'> & { views: number }>()
   return c.json({ articles: result.results })
 })
 
@@ -123,6 +138,7 @@ app.put('/api/articles/:slug', async (c) => {
       `UPDATE articles SET title = ?, slug = ?, content_html = ?, author = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE slug = ?`
     ).bind(input.title, input.slug, input.content_html, input.author, currentSlug).run()
     if (!result.meta.changes) return jsonError('Article not found', 404)
+    if (input.slug !== currentSlug) await renameStats(c.env.DB, currentSlug, input.slug)
     return c.json({ article: await getArticle(c.env.DB, input.slug) })
   } catch (error) {
     return jsonError(String(error).includes('UNIQUE') ? 'That slug is already in use' : 'Unable to update article', String(error).includes('UNIQUE') ? 409 : 500)
@@ -131,7 +147,74 @@ app.put('/api/articles/:slug', async (c) => {
 
 app.delete('/api/articles/:slug', async (c) => {
   const result = await c.env.DB.prepare('DELETE FROM articles WHERE slug = ?').bind(c.req.param('slug')).run()
+  if (result.meta.changes) {
+    await ensureStats(c.env.DB)
+    await c.env.DB.batch(['view_totals', 'view_daily'].map((t) => c.env.DB.prepare(`DELETE FROM ${t} WHERE slug = ?`).bind(c.req.param('slug'))))
+  }
   return result.meta.changes ? c.body(null, 204) : c.json({ error: 'Article not found' }, 404)
+})
+
+// Page-view beacon. Answers at once; the counting runs after the response.
+app.post('/api/view', async (c) => {
+  const ua = c.req.header('user-agent') || ''
+  if (!ua || BOT_UA.test(ua)) return c.body(null, 204)
+  let body: any = {}
+  try { body = await c.req.json() } catch {}
+  const slug = String(body.slug || '').slice(0, 120)
+  if (!slug) return c.body(null, 204)
+  const cf = (c.req.raw as any).cf || {}
+  const work = recordView(c.env, {
+    slug,
+    referrer: referrerHost(String(body.ref || ''), new URL(c.req.url).hostname),
+    country: String(cf.country || 'Unknown').slice(0, 8),
+    device: /ipad|tablet/i.test(ua) ? 'Tablet' : /mobi|android|iphone/i.test(ua) ? 'Mobile' : 'Desktop',
+    browser: /edg\//i.test(ua) ? 'Edge' : /opr\/|opera/i.test(ua) ? 'Opera' : /firefox|fxios/i.test(ua) ? 'Firefox' : /chrome|crios/i.test(ua) ? 'Chrome' : /safari/i.test(ua) ? 'Safari' : 'Other',
+    visitorKey: `${c.req.header('cf-connecting-ip') || ''}|${ua}`,
+  }).catch((error) => console.error('view', error))
+  try { c.executionCtx.waitUntil(work) } catch { await work }
+  return c.body(null, 204)
+})
+
+app.get('/api/admin/stats', async (c) => {
+  const db = c.env.DB
+  await ensureStats(db)
+  const days = [7, 30, 90, 365].includes(Number(c.req.query('days'))) ? Number(c.req.query('days')) : 30
+  const today = new Date().toISOString().slice(0, 10)
+  const since = shiftDay(today, -(days - 1))
+  const prevSince = shiftDay(since, -days)
+  const [daily, previous, allTime, articleCount, top, sources] = await db.batch([
+    db.prepare('SELECT day, SUM(views) AS views, SUM(visitors) AS visitors FROM view_daily WHERE day >= ? GROUP BY day ORDER BY day').bind(since),
+    db.prepare('SELECT COALESCE(SUM(views), 0) AS views, COALESCE(SUM(visitors), 0) AS visitors FROM view_daily WHERE day >= ? AND day < ?').bind(prevSince, since),
+    db.prepare('SELECT COALESCE(SUM(views), 0) AS views FROM view_totals'),
+    db.prepare('SELECT COUNT(*) AS n FROM articles'),
+    db.prepare(`SELECT d.slug, COALESCE(a.title, CASE d.slug WHEN '/' THEN 'Home page' ELSE d.slug END) AS title, SUM(d.views) AS views, SUM(d.visitors) AS visitors
+      FROM view_daily d LEFT JOIN articles a ON a.slug = d.slug WHERE d.day >= ? GROUP BY d.slug ORDER BY views DESC LIMIT 10`).bind(since),
+    db.prepare('SELECT kind, value, SUM(views) AS views FROM view_sources WHERE day >= ? GROUP BY kind, value ORDER BY views DESC').bind(since),
+  ])
+  const byDay = new Map((daily.results as any[]).map((r) => [r.day, r]))
+  const series = Array.from({ length: days }, (_, i) => {
+    const day = shiftDay(since, i)
+    const row: any = byDay.get(day)
+    return { day, views: row?.views || 0, visitors: row?.visitors || 0 }
+  })
+  const grouped: Record<string, { value: string; views: number }[]> = { country: [], referrer: [], device: [], browser: [] }
+  for (const r of sources.results as any[]) if (grouped[r.kind] && grouped[r.kind].length < 8) grouped[r.kind].push({ value: r.value, views: r.views })
+  const sum = (key: 'views' | 'visitors') => series.reduce((n, d) => n + d[key], 0)
+  return c.json({
+    days,
+    totals: {
+      views: sum('views'),
+      visitors: sum('visitors'),
+      previousViews: (previous.results[0] as any).views,
+      previousVisitors: (previous.results[0] as any).visitors,
+      today: series[series.length - 1].views,
+      allTime: (allTime.results[0] as any).views,
+      articles: (articleCount.results[0] as any).n,
+    },
+    series,
+    top: top.results,
+    sources: grouped,
+  })
 })
 
 app.post('/api/upload', async (c) => {
@@ -196,20 +279,22 @@ app.get('/', async (c) => {
   const searching = query.length >= 2
   const page = Math.min(Math.max(parseInt(c.req.query('page') || '1', 10) || 1, 1), 500)
   const offset = (page - 1) * PAGE_SIZE
-  const columns = 'title, slug, author, created_at, substr(content_html, 1, 1200) AS excerpt_html'
+  const columns = 'a.title, a.slug, a.author, a.created_at, substr(a.content_html, 1, 1200) AS excerpt_html, COALESCE(v.views, 0) AS views'
+  const from = 'articles a LEFT JOIN view_totals v ON v.slug = a.slug'
+  await ensureStats(c.env.DB)
 
   let rows: ArticleSummary[]
   if (searching) {
     const pattern = likePattern(query)
     rows = (await c.env.DB.prepare(
-      `SELECT ${columns} FROM articles
+      `SELECT ${columns} FROM ${from}
        WHERE title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\' OR content_html LIKE ? ESCAPE '\\'
-       ORDER BY CASE WHEN title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, created_at DESC
+       ORDER BY CASE WHEN title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, a.created_at DESC
        LIMIT ? OFFSET ?`
     ).bind(pattern, pattern, pattern, pattern, PAGE_SIZE + 1, offset).all<ArticleSummary>()).results
   } else {
     rows = (await c.env.DB.prepare(
-      `SELECT ${columns} FROM articles ORDER BY created_at DESC LIMIT ? OFFSET ?`
+      `SELECT ${columns} FROM ${from} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`
     ).bind(PAGE_SIZE + 1, offset).all<ArticleSummary>()).results
   }
 
@@ -225,7 +310,7 @@ app.get('/', async (c) => {
 
   const list = articles.map((a) => {
     const summary = excerpt(a.excerpt_html, 170)
-    return `<a class="card" href="/${encodeURIComponent(a.slug)}"><h2>${escapeHtml(a.title)}</h2>${summary ? `<p class="excerpt">${escapeHtml(summary)}</p>` : ''}<p class="article-meta">${escapeHtml(a.author || 'Anonymous')} · ${timeTag(a.created_at)}</p></a>`
+    return `<a class="card" href="/${encodeURIComponent(a.slug)}"><h2>${escapeHtml(a.title)}</h2>${summary ? `<p class="excerpt">${escapeHtml(summary)}</p>` : ''}<p class="article-meta">${escapeHtml(a.author || 'Anonymous')} · ${timeTag(a.created_at)}${viewsLabel(a.views)}</p></a>`
   }).join('')
   const empty = searching
     ? `<p class="muted empty">No articles found for “${escapeHtml(query)}”. <a href="/">See all articles</a></p>`
@@ -242,6 +327,7 @@ app.get('/', async (c) => {
     description: SITE_DESCRIPTION,
     canonical: `${base}${searching ? '/' : pageUrl(page)}`,
     robots: searching ? 'noindex, follow' : undefined,
+    track: '/',
     head: `<meta property="og:type" content="website"><meta name="twitter:card" content="summary">${
       !searching && page === 1 ? `<script type="application/ld+json">${jsonLd({ '@context': 'https://schema.org', '@type': 'WebSite', name: SITE_NAME, url: `${base}/`, potentialAction: { '@type': 'SearchAction', target: `${base}/?q={search_term_string}`, 'query-input': 'required name=search_term_string' } })}</script>` : ''
     }`,
@@ -260,7 +346,9 @@ app.get('/:slug', async (c, next) => {
   if (slug.includes('.') || RESERVED_SLUGS.has(slug)) return next()
   const article = await getArticle(c.env.DB, slug)
   if (!article) return next()
-  return c.html(articleDocument(article, siteBase(c)))
+  await ensureStats(c.env.DB)
+  const total = await c.env.DB.prepare('SELECT views FROM view_totals WHERE slug = ?').bind(slug).first<number>('views')
+  return c.html(articleDocument(article, siteBase(c), total || 0))
 })
 
 app.all('*', async (c) => {
@@ -270,6 +358,55 @@ app.all('*', async (c) => {
   if (asset.status === 404) return c.req.path.startsWith('/api/') ? c.json({ error: 'Not found' }, 404) : c.html(notFoundDocument(), 404)
   return new Response(asset.body, asset)
 })
+
+function viewsLabel(views?: number) {
+  return views ? ` · <span class="views">${views.toLocaleString('en-US')} ${views === 1 ? 'view' : 'views'}</span>` : ''
+}
+
+function shiftDay(day: string, offset: number) {
+  const d = new Date(`${day}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + offset)
+  return d.toISOString().slice(0, 10)
+}
+
+function referrerHost(ref: string, ownHost: string) {
+  if (!ref) return 'Direct'
+  try {
+    const host = new URL(ref).hostname.replace(/^www\./, '')
+    if (!host || host === ownHost.replace(/^www\./, '')) return 'Internal'
+    return host.slice(0, 80)
+  } catch { return 'Direct' }
+}
+
+async function renameStats(db: D1Database, from: string, to: string) {
+  await ensureStats(db)
+  await db.batch([
+    db.prepare('INSERT INTO view_totals (slug, views) SELECT ?, views FROM view_totals WHERE slug = ? ON CONFLICT(slug) DO UPDATE SET views = view_totals.views + excluded.views').bind(to, from),
+    db.prepare('DELETE FROM view_totals WHERE slug = ?').bind(from),
+    db.prepare('UPDATE OR IGNORE view_daily SET slug = ? WHERE slug = ?').bind(to, from),
+    db.prepare('DELETE FROM view_daily WHERE slug = ?').bind(from),
+  ])
+}
+
+async function recordView(env: Bindings, v: { slug: string; referrer: string; country: string; device: string; browser: string; visitorKey: string }) {
+  const db = env.DB
+  await ensureStats(db)
+  if (v.slug !== '/' && !(await db.prepare('SELECT 1 FROM articles WHERE slug = ?').bind(v.slug).first())) return
+  const day = new Date().toISOString().slice(0, 10)
+  // Unique visitors: a salted, per-day hash. No IP is stored, and the hashes are pruned after two days.
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${day}|${env.ADMIN_SECRET_KEY}|${v.visitorKey}|${v.slug}`))
+  const hash = [...new Uint8Array(digest).slice(0, 12)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  const fresh = (await db.prepare('INSERT OR IGNORE INTO view_visitors (day, hash) VALUES (?, ?)').bind(day, hash).run()).meta.changes ? 1 : 0
+  const source = (kind: string, value: string) =>
+    db.prepare('INSERT INTO view_sources (day, kind, value, views) VALUES (?, ?, ?, 1) ON CONFLICT(day, kind, value) DO UPDATE SET views = views + 1').bind(day, kind, value)
+  const statements = [
+    db.prepare('INSERT INTO view_totals (slug, views) VALUES (?, 1) ON CONFLICT(slug) DO UPDATE SET views = views + 1').bind(v.slug),
+    db.prepare('INSERT INTO view_daily (day, slug, views, visitors) VALUES (?, ?, 1, ?) ON CONFLICT(day, slug) DO UPDATE SET views = views + 1, visitors = visitors + excluded.visitors').bind(day, v.slug, fresh),
+    source('country', v.country), source('referrer', v.referrer), source('device', v.device), source('browser', v.browser),
+  ]
+  if (Math.random() < 0.02) statements.push(db.prepare('DELETE FROM view_visitors WHERE day < ?').bind(shiftDay(day, -2)))
+  await db.batch(statements)
+}
 
 function siteBase(c: { env: Bindings; req: { url: string } }) {
   return (c.env.SITE_URL || new URL(c.req.url).origin).replace(/\/$/, '')
@@ -365,10 +502,10 @@ function lazyImages(html: string) {
   return html.replace(/<img\b(?![^>]*\bloading=)/gi, (tag) => index++ === 0 ? `${tag} decoding="async"` : `${tag} loading="lazy" decoding="async"`)
 }
 
-function layout(options: { title: string; description: string; canonical?: string; robots?: string; head?: string; body: string }) {
+function layout(options: { title: string; description: string; canonical?: string; robots?: string; head?: string; body: string; track?: string }) {
   const title = escapeHtml(options.title)
   const description = escapeHtml(options.description)
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><meta name="description" content="${description}">${options.robots ? `<meta name="robots" content="${options.robots}">` : ''}${options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}"><meta property="og:url" content="${escapeHtml(options.canonical)}">` : ''}<meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:site_name" content="${SITE_NAME}"><meta name="twitter:title" content="${title}"><meta name="twitter:description" content="${description}">${options.head || ''}<link rel="alternate" type="application/rss+xml" title="${SITE_NAME}" href="/feed.xml"><script src="/theme.js"></script><script src="/fx3d.js" defer></script><link rel="stylesheet" href="/styles.css">${ADSENSE}</head><body><header class="site-head"><a href="/">${SITE_NAME}</a><button class="theme-toggle" data-theme-toggle aria-label="Switch color theme">☾</button></header>${options.body}<footer class="site-foot"><span>© ${new Date().getUTCFullYear()} ${SITE_NAME}</span><a href="/feed.xml">RSS</a></footer></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><meta name="description" content="${description}">${options.robots ? `<meta name="robots" content="${options.robots}">` : ''}${options.canonical ? `<link rel="canonical" href="${escapeHtml(options.canonical)}"><meta property="og:url" content="${escapeHtml(options.canonical)}">` : ''}<meta property="og:title" content="${title}"><meta property="og:description" content="${description}"><meta property="og:site_name" content="${SITE_NAME}"><meta name="twitter:title" content="${title}"><meta name="twitter:description" content="${description}">${options.head || ''}<link rel="alternate" type="application/rss+xml" title="${SITE_NAME}" href="/feed.xml"><script src="/theme.js"></script><script src="/fx3d.js" defer></script><link rel="stylesheet" href="/styles.css">${options.track ? `<script src="/track.js" defer data-slug="${escapeHtml(options.track)}"></script>` : ''}${ADSENSE}</head><body><header class="site-head"><a href="/">${SITE_NAME}</a><button class="theme-toggle" data-theme-toggle aria-label="Switch color theme">☾</button></header>${options.body}<footer class="site-foot"><span>© ${new Date().getUTCFullYear()} ${SITE_NAME}</span><a href="/feed.xml">RSS</a></footer></body></html>`
 }
 
 function notFoundDocument() {
@@ -380,7 +517,7 @@ function notFoundDocument() {
   })
 }
 
-function articleDocument(article: Article, base: string) {
+function articleDocument(article: Article, base: string, views = 0) {
   const author = escapeHtml(article.author)
   const text = plainText(article.content_html)
   const description = excerpt(article.content_html, 160) || article.title
@@ -406,10 +543,10 @@ function articleDocument(article: Article, base: string) {
   })
 
   const head = `<meta property="og:type" content="article"><meta property="article:published_time" content="${escapeHtml(publishedIso)}"><meta property="article:modified_time" content="${escapeHtml(modifiedIso)}">${article.author ? `<meta property="article:author" content="${author}">` : ''}${image ? `<meta property="og:image" content="${escapeHtml(image)}"><meta name="twitter:image" content="${escapeHtml(image)}">` : ''}<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}"><script type="application/ld+json">${structured}</script>`
-  const byline = [author, timeTag(publishedIso), `${minutes} min read`].filter(Boolean).join(' · ')
+  const byline = [author, timeTag(publishedIso), `${minutes} min read`].filter(Boolean).join(' · ') + viewsLabel(views)
   const body = `<main class="article-shell"><article><h1>${escapeHtml(article.title)}</h1><p class="byline">${byline}</p><div class="story">${lazyImages(article.content_html)}</div></article><nav class="article-actions"><a class="back-link" href="/">← All articles</a></nav></main>`
 
-  return layout({ title: `${article.title} — ${SITE_NAME}`, description, canonical, head, body })
+  return layout({ title: `${article.title} — ${SITE_NAME}`, description, canonical, head, body, track: article.slug })
 }
 
 export default app

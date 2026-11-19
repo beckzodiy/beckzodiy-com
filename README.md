@@ -44,4 +44,8 @@ The `.dev.vars` file is ignored by Git. Open `/admin1225` on the local URL and e
 - `/sitemap.xml`, `/feed.xml` (RSS) and `/robots.txt` are generated dynamically.
 - The home page (`/`, `/?q=…`, `/?page=N`) and article pages are server-rendered; `www` redirects to the apex domain.
 
+## Views & dashboard
+
+Each article page and the home page send one beacon to `POST /api/view` (`public/track.js`). Bots are ignored, and so are your own visits while you are logged in to `/admin1225`. The Worker keeps daily totals per page, unique visitors (salted per-day hash, no IPs stored, pruned after two days), and daily counts by country, referrer, device and browser. View counts appear on cards and article pages. `/admin1225` opens on a **Dashboard** tab (`public/stats.js`, data from `GET /api/admin/stats?days=7|30|90|365`). The stats tables create themselves on first request; no migration step is needed.
+
 Article HTML is sanitized in the editor before saving. For a public multi-admin deployment, add server-side HTML sanitization and replace the shared secret with Cloudflare Access or an identity provider.
