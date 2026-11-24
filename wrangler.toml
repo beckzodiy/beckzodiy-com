@@ -1,5 +1,4 @@
 name = "beckzodiy-publisher"
-main = "src/index.ts"
 compatibility_date = "2025-08-23"
 workers_dev = true
 
@@ -8,19 +7,7 @@ routes = [
   { pattern = "www.beckzodiy.com", custom_domain = true }
 ]
 
-[vars]
-SITE_URL = "https://beckzodiy.com"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "beckzodiy-db"
-database_id = "12b9eb4f-0890-48e2-9d0c-e19ca141f297"
-
-[[r2_buckets]]
-binding = "MEDIA"
-bucket_name = "beckzodiy-media"
-
+# Static site only: every path serves the 3D page.
 [assets]
 directory = "./public"
-binding = "ASSETS"
-run_worker_first = true
+not_found_handling = "single-page-application"

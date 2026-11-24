@@ -1,21 +1,16 @@
 {
-  "name": "beckzodiy-publisher",
-  "version": "1.0.0",
+  "name": "beckzodiy-com",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:local": "wrangler d1 execute beckzodiy-publisher --local --file=./schema.sql",
-    "db:remote": "wrangler d1 execute beckzodiy-publisher --remote --file=./schema.sql",
-    "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "hono": "^4.9.4"
+    "build": "esbuild src/main.js --bundle --minify --format=esm --target=es2020 --outfile=public/app.js",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^5.20260820.1",
-    "typescript": "^5.9.2",
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0",
     "wrangler": "^4.125.0"
   }
 }
