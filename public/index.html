@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>beckzodiy — my aim</title>
+<title>Beckzodiy</title>
 <meta name="description" content="My aim: make sending money home to Uzbekistan cheap and instant, using legal stablecoins. Scroll to see how it works.">
-<meta property="og:title" content="beckzodiy — my aim">
+<meta property="og:title" content="Beckzodiy">
 <meta property="og:description" content="Make sending money home to Uzbekistan cheap and instant, using legal stablecoins.">
 <meta name="theme-color" content="#04050c">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌍</text></svg>">
@@ -31,6 +31,8 @@
   .panel.right { left: auto; right: 8vw; }
   .panel::before { content: ""; position: absolute; inset: -70px -90px; z-index: -1; background: radial-gradient(closest-side, rgba(3,4,10,.82), rgba(3,4,10,.55) 55%, rgba(3,4,10,0)); pointer-events: none; }
   .panel.center { left: 50%; transform: translate(-50%, -50%); text-align: center; max-width: 760px; width: 90vw; }
+  .panel.center::before { background: radial-gradient(closest-side, rgba(3,4,10,.94), rgba(3,4,10,.8) 60%, rgba(3,4,10,0)); }
+  .panel.center p { color: #c3cae4; }
   .panel small { display: block; color: var(--gold); font-size: 12px; letter-spacing: .2em; text-transform: uppercase; margin-bottom: 16px; }
   .panel h1, .panel h2 { font-family: "Unbounded", system-ui, sans-serif; font-weight: 800; line-height: 1.05; letter-spacing: -.02em; text-shadow: 0 4px 40px rgba(0,0,0,.7); }
   .panel h1 { font-size: clamp(34px, 5.2vw, 72px); }
@@ -56,6 +58,9 @@
   .hint { position: fixed; z-index: 3; left: 50%; bottom: 28px; transform: translateX(-50%); font-size: 11px; letter-spacing: .3em; text-transform: uppercase; color: var(--dim); pointer-events: none; transition: opacity .6s; }
   .hint::after { content: ""; display: block; width: 1px; height: 36px; margin: 10px auto 0; background: linear-gradient(var(--dim), transparent); animation: drip 1.6s ease-in-out infinite; transform-origin: top; }
   @keyframes drip { 0% { transform: scaleY(0); } 50% { transform: scaleY(1); } 100% { transform: scaleY(1); opacity: 0; } }
+  .snd { position: fixed; z-index: 4; left: 24px; bottom: 22px; font: inherit; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; color: var(--dim); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15); padding: 9px 14px; border-radius: 999px; cursor: pointer; backdrop-filter: blur(6px); }
+  .snd.on { color: var(--uz); border-color: var(--uz); }
+  @media (max-width: 700px) { .snd { top: 16px; bottom: auto; left: 50%; transform: translateX(-50%); } }
   .nogl { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; z-index: 10; background: #04050c; }
 
   @media (max-width: 700px) {
@@ -71,10 +76,11 @@
 <div id="fade"></div>
 <div id="track"></div>
 
-<div class="hud tl">beckzodiy</div>
+<div class="hud tl">Beckzodiy</div>
 <div class="hud tr" id="count">01 / 13</div>
 <div class="bar"><i id="bar"></i></div>
 <div class="hint" id="hint">scroll</div>
+<button class="snd" id="snd" aria-label="Toggle sound">♪ Sound off</button>
 
 <section class="panel" data-t="0">
   <small>beckzodiy — my aim</small>

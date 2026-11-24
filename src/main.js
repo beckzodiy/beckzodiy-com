@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js'
 import { N, LAND, UZ, AE, UZ_OUTLINE, AE_OUTLINE } from './geo.js'
+import * as sound from './sound.js'
 
 const canvas = document.getElementById('gl')
 const coarse = matchMedia('(pointer: coarse)').matches
@@ -108,12 +109,12 @@ function label(text, color = '#ffffff', h = 0.26) {
 function coinFace(text, bg, fg) {
   const c = document.createElement('canvas'); c.width = c.height = 256
   const g = c.getContext('2d')
-  const gr = g.createRadialGradient(110, 100, 10, 128, 128, 128)
-  gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.35, bg); gr.addColorStop(1, fg)
+  const gr = g.createLinearGradient(0, 0, 256, 256)
+  gr.addColorStop(0, bg); gr.addColorStop(1, fg)
   g.fillStyle = gr; g.fillRect(0, 0, 256, 256)
-  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 10; g.beginPath(); g.arc(128, 128, 104, 0, Math.PI * 2); g.stroke()
-  g.fillStyle = 'rgba(0,0,0,.75)'; g.font = '800 64px "Unbounded", system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'
-  g.fillText(text, 128, 134)
+  g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 9; g.beginPath(); g.arc(128, 128, 108, 0, Math.PI * 2); g.stroke()
+  g.fillStyle = '#140c00'; g.font = '800 78px "Unbounded", "Arial Black", system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'
+  g.fillText(text, 128, 132)
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace
   return t
 }
@@ -258,8 +259,8 @@ function marker(p, color, size = 0.45) {
   globe.add(s)
   return s
 }
-function placeLabel(p, text, color, up = 0.42) {
-  const s = label(text, color)
+function placeLabel(p, text, color, up = 0.42, h) {
+  const s = label(text, color, h)
   ll(p[0], p[1], R + up, s.position)
   globe.add(s)
   return s
@@ -280,18 +281,32 @@ const labels = {
 }
 
 // ---------- 1. migrant money arcs ----------
+// [place, weight, name]
 const sources = [
-  [P.moscow, 1.6], [P.spb, 1.1], [P.yekat, 1], [P.almaty, 1], [P.seoul, 1], [P.istanbul, 1],
-  [P.dubai, 1], [P.newyork, 0.9], [P.london, 1], [P.warsaw, 1], [P.berlin, 1],
+  [P.moscow, 1.6, 'MOSCOW'], [P.spb, 1.1, 'ST PETERSBURG'], [P.yekat, 1, 'YEKATERINBURG'], [[55.79, 49.12], 1, 'KAZAN'],
+  [[55.03, 82.92], 0.9, 'NOVOSIBIRSK'], [[45.04, 38.98], 0.9, 'KRASNODAR'], [P.almaty, 1, 'ALMATY'], [[51.17, 71.45], 0.9, 'ASTANA'],
+  [P.seoul, 1, 'SEOUL'], [[35.18, 129.08], 0.8, 'BUSAN'], [[35.68, 139.69], 0.8, 'TOKYO'], [P.istanbul, 1, 'ISTANBUL'],
+  [[39.93, 32.86], 0.8, 'ANKARA'], [P.dubai, 1, 'DUBAI'], [[24.71, 46.68], 0.8, 'RIYADH'], [P.warsaw, 1, 'WARSAW'],
+  [P.berlin, 1, 'BERLIN'], [[50.08, 14.44], 0.8, 'PRAGUE'], [P.london, 1, 'LONDON'], [P.newyork, 0.9, 'NEW YORK'],
+  [[41.88, -87.63], 0.8, 'CHICAGO'],
 ]
+// Uzbek cities the money lands in
+const UZ_CITIES = [
+  [P.tashkent, 'TASHKENT'], [P.andijan, 'ANDIJAN'], [[39.65, 66.96], 'SAMARKAND'], [[39.77, 64.42], 'BUKHARA'],
+  [[40.39, 71.78], 'FERGANA'], [[41.0, 71.67], 'NAMANGAN'], [[42.46, 59.6], 'NUKUS'], [[37.22, 67.28], 'TERMEZ'],
+  [[38.86, 65.79], 'QARSHI'], [[41.55, 60.63], 'URGENCH'],
+]
+const sourceLabels = sources.filter(s => s[2] !== 'DUBAI').map(([p, , n]) => placeLabel(p, n, '#c9d4ff', 0.28, 0.17))
+const uzLabels = UZ_CITIES.slice(2).map(([p, n]) => placeLabel(p, n, '#2fe6a7', 0.22, 0.15))
+const uzMarkers = UZ_CITIES.slice(2).map(([p]) => marker(p, '#2fe6a7', 0.3))
 const migrantArcs = sources.map(([p, w], i) => {
-  const m = arc(p, i % 2 ? P.tashkent : P.andijan, '#2fe6a7', 1, 0.016 * w + 0.008)
+  const m = arc(p, UZ_CITIES[i % UZ_CITIES.length][0], '#2fe6a7', 1, 0.014 * w + 0.007)
   m.material.uniforms.uTail.value = 6
   m.userData.offset = Math.random()
   globe.add(m)
   return m
 })
-const sourceMarkers = sources.map(([p]) => marker(p, '#9fb6ff', 0.32))
+const sourceMarkers = sources.map(([p]) => marker(p, '#9fb6ff', 0.3))
 
 // ---------- 2. old bank route ----------
 const oldA = arc(P.dubai, P.newyork, '#ff6b5e', 0.8, 0.02)
@@ -337,13 +352,17 @@ globe.add(packet)
 // ---------- coin (Dubai) and arrival coin (Andijan) ----------
 function makeCoin(texts) {
   const faces = texts.map(([t, bg, fg]) => coinFace(t, bg, fg))
-  const side = new THREE.MeshStandardMaterial({ color: '#c99a2e', metalness: 0.9, roughness: 0.3, emissive: '#3a2600' })
+  const side = new THREE.MeshStandardMaterial({ color: '#c99a2e', metalness: 0.6, roughness: 0.45 })
   const face = new THREE.MeshBasicMaterial({ map: faces[0] })
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.07, 48), [side, face, face])
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.08, 48), side)
   mesh.rotation.x = Math.PI / 2
-  const pivot = new THREE.Group(); pivot.add(mesh)
+  // flat front face with normal UVs, so the text reads correctly
+  const front = new THREE.Mesh(new THREE.CircleGeometry(0.5, 48), face)
+  front.position.z = 0.041
+  const pivot = new THREE.Group(); pivot.add(mesh, front)
   const holder = new THREE.Group(); holder.add(pivot)
-  const halo = glow('#ffd27a', 2.2)
+  const halo = glow('#ffd27a', 1.5)
+  halo.material.opacity = 0.35
   holder.add(halo)
   globe.add(holder)
   return { holder, pivot, mesh, face, side, faces, halo }
@@ -351,10 +370,10 @@ function makeCoin(texts) {
 scene.add(new THREE.AmbientLight('#ffffff', 1.2))
 const keyLight = new THREE.DirectionalLight('#ffffff', 2.5)
 scene.add(keyLight)
-const coin = makeCoin([['AED', '#ffd56b', '#a86b00'], ['1:1', '#9ffcff', '#0c7f9a']])
+const coin = makeCoin([['AED', '#d29a2c', '#9a6812'], ['1:1', '#3fb7cc', '#1d7f93']])
 const coinUp = ll(P.dubai[0], P.dubai[1], 1)
-const arrive = makeCoin([['UZS', '#8affd4', '#08805a']])
-arrive.side.color.set('#2fb889'); arrive.side.emissive.set('#00301e'); arrive.halo.material.color.set('#2fe6a7')
+const arrive = makeCoin([['UZS', '#33b884', '#1a7d58']])
+arrive.side.color.set('#2fb889'); arrive.halo.material.color.set('#2fe6a7')
 const andijanUp = ll(P.andijan[0], P.andijan[1], 1)
 const beam = new THREE.Mesh(
   new THREE.CylinderGeometry(0.05, 0.22, 3, 24, 1, true),
@@ -446,6 +465,14 @@ const pDummy = new THREE.Object3D(), pTan = new THREE.Vector3()
 const mouse = new THREE.Vector2(), mouseS = new THREE.Vector2()
 addEventListener('pointermove', e => mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1))
 document.getElementById('again').addEventListener('click', () => scrollTo({ top: 0, behavior: 'smooth' }))
+const sndBtn = document.getElementById('snd')
+sndBtn.addEventListener('click', () => {
+  const on = sound.toggle()
+  sndBtn.textContent = on ? '♪ Sound on' : '♪ Sound off'
+  sndBtn.classList.toggle('on', on)
+})
+// sound event memory
+const S = { coin: false, morph: false, hop: -1, nodes: 0, arrived: false, bit: -1 }
 
 // ---------- scroll + panels ----------
 const panels = [...document.querySelectorAll('.panel')].map(el => ({
@@ -467,7 +494,7 @@ const CAM = [
   [0.0, 24, 60, 17], [0.06, 36, 56, 16.5], [0.09, 44, 52, 15.5], [0.17, 40, 60, 14], [0.215, 38, 25, 19],
   [0.26, 42, 0, 21], [0.305, 32, 45, 14], [0.36, 21, 54, 10.5], [0.44, 21, 54, 10], [0.48, 24, 55.3, 10],
   [0.64, 40.8, 72.3, 9.5], [0.66, 41, 70, 10], [0.79, 32, 50, 17], [0.82, 30, 35, 20], [0.86, 38, 76, 11],
-  [0.89, 37, 80, 10.5], [0.95, 34, 64, 13], [1.0, 30, 62, 15],
+  [0.89, 37, 80, 10.5], [0.95, 44, 64, 20], [1.0, 48, 62, 24],
 ]
 function camKey(t) {
   let i = 0
@@ -505,7 +532,8 @@ function frame(now) {
   const mobile = innerWidth <= 700
   const side = panels[best].side
   const tx = mobile ? 0 : side * 0.17 * innerWidth
-  const ty = mobile && side !== 0 ? 0.16 * innerHeight : 0
+  const ending = sp > 0.92
+  const ty = ending ? -0.3 * innerHeight : mobile && side !== 0 ? 0.16 * innerHeight : 0
   viewOff.x += (tx - viewOff.x) * (1 - Math.exp(-dt * 3))
   viewOff.y += (ty - viewOff.y) * (1 - Math.exp(-dt * 3))
   camera.setViewOffset(innerWidth, innerHeight, viewOff.x, viewOff.y, innerWidth, innerHeight)
@@ -536,6 +564,10 @@ function frame(now) {
     migrantArcs.forEach(m => { setAlpha(m, mA); m.material.uniforms.uDraw.value = mDraw; m.material.uniforms.uHead.value = time * 0.35 + m.userData.offset })
     sourceMarkers.forEach(s => setSpriteAlpha(s, mA))
     setSpriteAlpha(labels.moscow, win(0.08, 0.19))
+    sourceLabels.forEach(l => setSpriteAlpha(l, win(0.075, 0.19)))
+    const uzA = win(0.0, 0.2, 0.03) + win(0.86, 1.1)
+    uzLabels.forEach(l => setSpriteAlpha(l, uzA))
+    uzMarkers.forEach(m => m.scale.setScalar(0.3 + Math.sin(time * 3) * 0.05))
     setSpriteAlpha(labels.uz, win(0.0, 0.2, 0.03))
 
     // old bank route: slow hops with pauses
@@ -548,6 +580,7 @@ function frame(now) {
       b.visible = oA > 0.01
       const hit = [cyc < 0.08, cyc > 0.38 && cyc < 0.5, cyc > 0.88][i]
       b.scale.setScalar(oA * (hit ? 1.6 : 1))
+      if (hit && S.hop !== i && oA > 0.5) { S.hop = i; sound.thud() }
     })
     setSpriteAlpha(labels.newyork, oA); setSpriteAlpha(labels.dubaiBank, oA); setSpriteAlpha(labels.uzBank, oA)
 
@@ -556,6 +589,8 @@ function frame(now) {
     coin.holder.visible = cA > 0.01
     if (coin.holder.visible) {
       const morph = smooth(local(0.385, 0.405))
+      if (cA > 0.5 && !S.coin) { S.coin = true; sound.ching(1318) }
+      if (morph > 0.5 !== S.morph) { S.morph = morph > 0.5; if (S.morph) sound.ching(1976) }
       coin.face.map = morph > 0.5 ? coin.faces[1] : coin.faces[0]
       coin.side.color.set(morph > 0.5 ? '#3cc9e0' : '#c99a2e')
       coin.halo.material.color.set(morph > 0.5 ? '#6cf4ff' : '#ffd27a')
@@ -563,9 +598,11 @@ function frame(now) {
       coin.holder.position.copy(coinUp).multiplyScalar(R + 0.7 + Math.sin(time * 2) * 0.05 - (1 - shrink) * 0.6)
       coin.holder.scale.setScalar(cA * shrink * (1 + (morph > 0.02 && morph < 0.98 ? 0.4 : 0)))
       coin.pivot.quaternion.copy(camera.quaternion)
-      coin.pivot.rotateY(Math.sin(time * 1.8) * 0.9)
+      coin.pivot.rotateY(Math.sin(time * 1.8) * 0.7)
+      coin.halo.position.set(0, 0, -0.5).applyQuaternion(camera.quaternion)
     }
     setSpriteAlpha(labels.dubai, win(0.22, 0.5))
+    if (cA < 0.1) S.coin = false
 
     // cable + packet
     const cabA = sp > 0.46 ? win(0.47, 1.2, 0.02) * (sp > 0.66 ? 0.55 : 1) : 0
@@ -578,6 +615,7 @@ function frame(now) {
     const pk = win(0.455, 0.645, 0.012)
     packet.visible = pk > 0.01
     packet.scale.setScalar(pk * (0.9 + Math.sin(time * 10) * 0.15))
+    sound.update(sp, cu, pk > 0.5, false)
     setSpriteAlpha(labels.marseille, win(0.53, 0.6))
     setSpriteAlpha(labels.frankfurt, win(0.56, 0.62))
     setSpriteAlpha(labels.tashkent, win(0.6, 0.66) + win(0.08, 0.19))
@@ -596,6 +634,9 @@ function frame(now) {
       s.scale.setScalar(done ? 0.75 + Math.sin(time * 6 + i) * 0.15 : 0.3)
     })
     setSpriteAlpha(checkLabel, win(0.815, 0.85) * smooth(local(0.81, 0.83)))
+    const doneCount = nA > 0.5 ? nodeArcs.filter(m => nP >= m.userData.delay + 0.5).length : 0
+    if (doneCount > S.nodes) sound.blip(900 + doneCount * 45, 0.04)
+    S.nodes = doneCount
 
     // arrival in Andijan
     const aA = win(0.86, 1.2, 0.02), drop = smooth(local(0.855, 0.885))
@@ -603,8 +644,11 @@ function frame(now) {
     arrive.holder.position.copy(andijanUp).multiplyScalar(R + 0.6 + (1 - drop) * 2.5 + Math.sin(time * 2) * 0.04)
     arrive.holder.scale.setScalar(aA * 0.9)
     arrive.pivot.quaternion.copy(camera.quaternion)
-    arrive.pivot.rotateY(Math.sin(time * 1.8) * 0.9)
+    arrive.pivot.rotateY(Math.sin(time * 1.8) * 0.7)
+    arrive.halo.position.set(0, 0, -0.5).applyQuaternion(camera.quaternion)
     beam.visible = aA > 0.01
+    if (drop > 0.97 && !S.arrived) { S.arrived = true; sound.arrive() }
+    if (drop < 0.5) S.arrived = false
     beam.material.opacity = 0.35 * aA * (1 - drop * 0.5)
     setSpriteAlpha(arriveLabel, win(0.875, 0.93))
     setSpriteAlpha(labels.andijan, win(0.6, 0.66) + win(0.86, 1.1))
@@ -617,6 +661,9 @@ function frame(now) {
     camera.position.set(0.9 + mouseS.x * 0.8, 0.3 + mouseS.y * 0.6, 22 - fl * 260)
     camera.lookAt(0, 0, camera.position.z - 30)
     const travel = time * 26 + fl * 520
+    sound.update(sp, 0, false, true)
+    const bitNow = Math.floor((zigLen - travel % zigLen) / SLOT)
+    if (bitNow !== S.bit) { S.bit = bitNow; if (BITS[((bitNow % BITS.length) + BITS.length) % BITS.length]) sound.blip(2093, 0.025) }
     ones.forEach((s, i) => {
       const u = ((((s * SLOT + travel) % zigLen) + zigLen) % zigLen) / zigLen
       zig.getPointAt(u, pDummy.position)
@@ -639,6 +686,7 @@ function frame(now) {
     const base = p.side === 0 ? 'translate(-50%,-50%)' : (mobile ? '' : 'translateY(-50%)')
     p.el.style.transform = `${base} translateY(${shift.toFixed(1)}px)`
   })
+  if (best !== lastCount && lastCount !== -1) sound.whoosh(best > lastCount)
   if (best !== lastCount) { countEl.textContent = `${String(best + 1).padStart(2, '0')} / ${panels.length}`; lastCount = best }
   barEl.style.height = (sp * 100).toFixed(2) + '%'
   hintEl.style.opacity = sp < 0.015 ? '1' : '0'
