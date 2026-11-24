@@ -61,6 +61,14 @@
   .snd { position: fixed; z-index: 4; left: 24px; bottom: 22px; font: inherit; font-size: 11px; letter-spacing: .15em; text-transform: uppercase; color: var(--dim); background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15); padding: 9px 14px; border-radius: 999px; cursor: pointer; backdrop-filter: blur(6px); }
   .snd.on { color: var(--uz); border-color: var(--uz); }
   @media (max-width: 700px) { .snd { top: 16px; bottom: auto; left: 50%; transform: translateX(-50%); } }
+  .uz-t { color: var(--uz); } .red-t { color: var(--red); }
+  .live { margin: 26px auto 0; max-width: 520px; display: grid; gap: 10px; text-align: left; }
+  .live div { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 16px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
+  .live span { font-size: 13px; color: var(--dim); }
+  .live b { font-family: "Unbounded", system-ui, sans-serif; font-size: clamp(18px, 2vw, 26px); font-variant-numeric: tabular-nums; }
+  .ticker { position: fixed; z-index: 3; right: 44px; bottom: 22px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); background: rgba(4,5,12,.7); border: 1px solid rgba(255,107,94,.35); padding: 9px 14px; border-radius: 999px; backdrop-filter: blur(6px); opacity: 0; transition: opacity .6s; pointer-events: none; }
+  .ticker b { color: var(--red); font-variant-numeric: tabular-nums; margin-left: 6px; }
+  @media (max-width: 700px) { .ticker { display: none; } .live div { padding: 10px 12px; } }
   .nogl { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; z-index: 10; background: #04050c; }
 
   @media (max-width: 700px) {
@@ -81,6 +89,7 @@
 <div class="bar"><i id="bar"></i></div>
 <div class="hint" id="hint">scroll</div>
 <button class="snd" id="snd" aria-label="Toggle sound">♪ Sound off</button>
+<div class="ticker" id="ticker">Lost to fees &amp; bad rates since you arrived <b id="tickLost">$0.00</b></div>
 
 <section class="panel" data-t="0">
   <small>beckzodiy — my aim</small>
@@ -100,11 +109,23 @@
   <p>was sent home to <span class="uz">Uzbekistan</span> in 2025. That money is about <b>14% of the whole economy</b>.</p>
 </section>
 
-<section class="panel" data-t="0.26">
+<section class="panel" data-t="0.245">
   <small>03 — the problem</small>
   <h2>The old way is slow and expensive.</h2>
   <p>Money hops from bank to bank, often through US dollars in New York. <span class="red">Every stop takes a fee and time.</span></p>
   <p>World average cost: <b>6.36%</b>. Through banks: <b>14.9%</b>.<br>Every 1% in fees costs Uzbek families <b>$189 million a year</b>.</p>
+</section>
+
+<section class="panel center" data-t="0.305">
+  <small>right now · live estimate</small>
+  <h2>Every second, <span class="uz-t" id="perSec">$599</span> goes home to Uzbekistan.</h2>
+  <div class="live">
+    <div><span>Sent since you opened this page</span><b class="uz-t" id="liveSent">$0</b></div>
+    <div><span>Taken by fees</span><b class="red-t" id="liveFees">$0</b></div>
+    <div><span>Taken by bad exchange rates</span><b class="red-t" id="liveFx">$0</b></div>
+  </div>
+  <p>About <b id="lostSec">$21</b> is lost <b>every second</b>. That's <b id="lostYear">$656 million</b> a year that never reaches families.</p>
+  <p class="note">Estimate: there is no public live feed, so this uses official numbers. $18.9B sent in 2025 (Central Bank of Uzbekistan). Russia → Uzbekistan costs 2.65% (0.84% fee + 1.81% exchange-rate margin, World Bank). Other countries use the world average of 6.36%, split the same way.</p>
 </section>
 
 <section class="panel" data-t="0.36">

@@ -472,6 +472,32 @@ sndBtn.addEventListener('click', () => {
   sndBtn.classList.toggle('on', on)
 })
 // sound event memory
+// ---------- live estimate of money going home ----------
+// Central Bank of Uzbekistan: $18.9B received in 2025. ~78% comes from Russia.
+// World Bank RPW, Russia → Uzbekistan: 2.65% total cost = 0.84% fee + 1.81% exchange-rate margin.
+// Other countries: world average 6.36%, split fee/FX in the same proportion (an assumption).
+const LIVE = (() => {
+  const perSec = 18.9e9 / (365 * 24 * 3600)
+  const ru = 0.78, ruFee = 0.0084, ruFx = 0.0181, other = 0.0636
+  const feeRate = ru * ruFee + (1 - ru) * other * (ruFee / (ruFee + ruFx))
+  const fxRate = ru * ruFx + (1 - ru) * other * (ruFx / (ruFee + ruFx))
+  return { perSec, feeRate, fxRate, start: performance.now() }
+})()
+const $ = id => document.getElementById(id)
+const usd = (v, d = 0) => '$' + v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })
+$('perSec').textContent = usd(LIVE.perSec)
+$('lostSec').textContent = usd(LIVE.perSec * (LIVE.feeRate + LIVE.fxRate))
+$('lostYear').textContent = usd(Math.round(18.9e9 * (LIVE.feeRate + LIVE.fxRate) / 1e6)) + ' million'
+const liveEls = { sent: $('liveSent'), fees: $('liveFees'), fx: $('liveFx'), tick: $('tickLost'), ticker: $('ticker') }
+function updateLive(now) {
+  const sec = (now - LIVE.start) / 1000
+  const sent = LIVE.perSec * sec
+  liveEls.sent.textContent = usd(sent)
+  liveEls.fees.textContent = usd(sent * LIVE.feeRate, 2)
+  liveEls.fx.textContent = usd(sent * LIVE.fxRate, 2)
+  liveEls.tick.textContent = usd(sent * (LIVE.feeRate + LIVE.fxRate), 2)
+  liveEls.ticker.style.opacity = sp > 0.33 && sp < 0.97 ? '1' : '0'
+}
 const S = { coin: false, morph: false, hop: -1, nodes: 0, arrived: false, bit: -1 }
 
 // ---------- scroll + panels ----------
@@ -492,7 +518,7 @@ sp = progress
 // camera keyframes over the globe: [t, lat, lon, distance]
 const CAM = [
   [0.0, 24, 60, 17], [0.06, 36, 56, 16.5], [0.09, 44, 52, 15.5], [0.17, 40, 60, 14], [0.215, 38, 25, 19],
-  [0.26, 42, 0, 21], [0.305, 32, 45, 14], [0.36, 21, 54, 10.5], [0.44, 21, 54, 10], [0.48, 24, 55.3, 10],
+  [0.245, 42, 0, 21], [0.305, 38, 20, 22], [0.36, 21, 54, 10.5], [0.44, 21, 54, 10], [0.48, 24, 55.3, 10],
   [0.64, 40.8, 72.3, 9.5], [0.66, 41, 70, 10], [0.79, 32, 50, 17], [0.82, 30, 35, 20], [0.86, 38, 76, 11],
   [0.89, 37, 80, 10.5], [0.95, 44, 64, 20], [1.0, 48, 62, 24],
 ]
@@ -571,7 +597,7 @@ function frame(now) {
     setSpriteAlpha(labels.uz, win(0.0, 0.2, 0.03))
 
     // old bank route: slow hops with pauses
-    const oA = win(0.225, 0.3, 0.025)
+    const oA = win(0.215, 0.32, 0.025)
     const cyc = (time * 0.22) % 1
     setAlpha(oldA, oA); setAlpha(oldB, oA)
     oldA.material.uniforms.uHead.value = smooth(cyc / 0.38)
@@ -679,7 +705,7 @@ function frame(now) {
   // ----- panels + HUD -----
   panels.forEach(p => {
     const d = Math.abs(sp - p.t)
-    const o = clamp01(1 - (d - 0.012) / 0.022)
+    const o = clamp01(1 - (d - 0.01) / 0.018)
     p.el.style.opacity = o.toFixed(3)
     p.el.style.pointerEvents = o > 0.5 ? 'auto' : 'none'
     const shift = (sp - p.t) * -900
@@ -689,6 +715,7 @@ function frame(now) {
   if (best !== lastCount && lastCount !== -1) sound.whoosh(best > lastCount)
   if (best !== lastCount) { countEl.textContent = `${String(best + 1).padStart(2, '0')} / ${panels.length}`; lastCount = best }
   barEl.style.height = (sp * 100).toFixed(2) + '%'
+  updateLive(now)
   hintEl.style.opacity = sp < 0.015 ? '1' : '0'
 
   composer.render()
