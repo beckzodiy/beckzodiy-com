@@ -69,6 +69,24 @@
   .ticker { position: fixed; z-index: 3; right: 44px; bottom: 22px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); background: rgba(4,5,12,.7); border: 1px solid rgba(255,107,94,.35); padding: 9px 14px; border-radius: 999px; backdrop-filter: blur(6px); opacity: 0; transition: opacity .6s; pointer-events: none; }
   .ticker b { color: var(--red); font-variant-numeric: tabular-nums; margin-left: 6px; }
   @media (max-width: 700px) { .ticker { display: none; } .live div { padding: 10px 12px; } }
+  .tip { color: var(--gold) !important; font-size: 13px !important; }
+  .city-card { position: fixed; z-index: 5; left: 0; top: 0; width: 300px; padding: 18px 18px 16px; border-radius: 16px; background: rgba(6,8,20,.88); border: 1px solid rgba(255,255,255,.14); backdrop-filter: blur(10px); box-shadow: 0 20px 60px rgba(0,0,0,.5); opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .city-card.show { opacity: 1; pointer-events: auto; animation: pop .45s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes pop { from { scale: .6; filter: blur(4px); } to { scale: 1; filter: none; } }
+  .city-card small { display: block; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--gold); }
+  .city-card h3 { font-family: "Unbounded", system-ui, sans-serif; font-size: 22px; margin: 6px 0 2px; }
+  .city-card .ctry { font-size: 13px; color: var(--dim); margin-bottom: 12px; }
+  .city-card .big { font-family: "Unbounded", system-ui, sans-serif; font-weight: 800; font-size: 26px; color: var(--uz); font-variant-numeric: tabular-nums; }
+  .city-card .lbl { font-size: 11px; line-height: 1.5; color: var(--dim); margin: 4px 0 12px; }
+  .city-card .row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 7px 0; border-top: 1px solid rgba(255,255,255,.07); color: var(--dim); }
+  .city-card .row b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .city-card .row b.uz-t { color: var(--uz); } .city-card .row b.red-t { color: var(--red); }
+  .city-card .bar2 { height: 8px; border-radius: 4px; background: rgba(255,255,255,.08); margin-top: 10px; overflow: hidden; }
+  .city-card .bar2 i { display: block; height: 100%; width: var(--w); background: linear-gradient(90deg, var(--cyan), var(--uz)); border-radius: 4px; animation: grow 1.4s cubic-bezier(.2,.8,.2,1); }
+  @keyframes grow { from { width: 0; } }
+  .city-card .note { font-size: 10px; color: var(--dim); opacity: .7; margin-top: 8px; }
+  .city-card .x { position: absolute; top: 10px; right: 12px; background: none; border: 0; color: var(--dim); font-size: 20px; cursor: pointer; }
+  @media (max-width: 700px) { .city-card { left: 50%; top: 60px; transform: translateX(-50%) !important; width: min(92vw, 340px); } }
   .nogl { position: fixed; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; z-index: 10; background: #04050c; }
 
   @media (max-width: 700px) {
@@ -101,6 +119,7 @@
   <small>01 — why</small>
   <h2>1.4 million Uzbeks work abroad.</h2>
   <p>In Russia, Kazakhstan, Korea, Turkey, Europe, the US, and here in the UAE. Almost every month, they send money home to their families.</p>
+  <p class="tip">👆 Click any city on the globe to see its numbers.</p>
 </section>
 
 <section class="panel right" data-t="0.17">
@@ -193,6 +212,8 @@
   </div>
   <p class="note">Sources: Central Bank of Uzbekistan (remittances 2025, migrant workers); World Bank Remittance Prices Worldwide (average cost, Sept 2025; bank cost, Q3 2025).</p>
 </section>
+
+<div class="city-card" id="cityCard"></div>
 
 <div class="nogl" id="nogl"><p>Your browser can't show 3D (WebGL).<br>My aim: make sending money home to Uzbekistan cheap and instant, using legal stablecoins.</p></div>
 

@@ -498,6 +498,132 @@ function updateLive(now) {
   liveEls.tick.textContent = usd(sent * (LIVE.feeRate + LIVE.fxRate), 2)
   liveEls.ticker.style.opacity = sp > 0.33 && sp < 0.97 ? '1' : '0'
 }
+
+// ---------- clickable cities ----------
+// Official 2025 totals by sending country (Central Bank of Uzbekistan, via kun.uz / daryo.uz).
+// Russia is not published as a single number: ~78% of $18.9B. City splits are not published.
+const COUNTRY = {
+  RU: { name: 'Russia', flag: '🇷🇺', total: 0.78 * 18.9e9, est: true },
+  KZ: { name: 'Kazakhstan', flag: '🇰🇿', total: 903e6 },
+  KR: { name: 'South Korea', flag: '🇰🇷', total: 612e6 },
+  TR: { name: 'Türkiye', flag: '🇹🇷', total: 547e6 },
+  US: { name: 'United States', flag: '🇺🇸', total: 665e6 },
+  GB: { name: 'United Kingdom', flag: '🇬🇧', total: 188e6 },
+  EU: { name: 'European Union', flag: '🇪🇺', total: 563e6 },
+  JP: { name: 'Japan', flag: '🇯🇵', total: null },
+  AE: { name: 'UAE', flag: '🇦🇪', total: null },
+  SA: { name: 'Saudi Arabia', flag: '🇸🇦', total: null },
+}
+const SRC_COUNTRY = ['RU', 'RU', 'RU', 'RU', 'RU', 'RU', 'KZ', 'KZ', 'KR', 'KR', 'JP', 'TR', 'TR', 'AE', 'SA', 'EU', 'EU', 'EU', 'GB', 'US', 'US']
+// Share of household income from money sent from abroad (National Statistics Committee, 2025),
+// or from all transfers where only that is published.
+const UZ_INFO = {
+  ANDIJAN: [30, 'of household income in Andijan region comes from money sent from abroad (2025)'],
+  FERGANA: [32.5, 'of household income in Fergana region comes from money sent from abroad (2025)'],
+  URGENCH: [31.1, 'of household income in Khorezm region comes from money sent from abroad (2025)'],
+  SAMARKAND: [38.5, 'of household income in Samarkand region comes from transfers (2025)'],
+  BUKHARA: [30, 'or more of household income in Bukhara region comes from transfers (early 2025)'],
+  NAMANGAN: [30, 'or more of household income in Namangan region comes from transfers (early 2025)'],
+  NUKUS: [30, 'or more of household income in Karakalpakstan comes from transfers (early 2025)'],
+  TERMEZ: [30, 'or more of household income in Surkhandarya region comes from transfers (early 2025)'],
+  QARSHI: [30, 'or more of household income in Kashkadarya region comes from transfers (early 2025)'],
+  TASHKENT: [null, 'The capital. No regional remittance share is published.'],
+}
+const picks = [
+  ...sources.map(([p, , name], i) => ({ kind: 'src', i, name, p, pos: ll(p[0], p[1], R * 1.012), c: COUNTRY[SRC_COUNTRY[i]] })),
+  ...UZ_CITIES.map(([p, name], i) => ({ kind: 'uz', i, name, p, pos: ll(p[0], p[1], R * 1.012) })),
+]
+const selRing = glow('#ffffff', 0.9); selRing.visible = false; globe.add(selRing)
+const card = document.getElementById('cityCard')
+let sel = null
+const pickV = new THREE.Vector3(), pickN = new THREE.Vector3(), camDir = new THREE.Vector3()
+function screenOf(pk, out) {
+  pickV.copy(pk.pos).applyMatrix4(globe.matrixWorld)
+  pickN.copy(pickV).normalize()
+  camDir.copy(camera.position).sub(pickV).normalize()
+  const facing = pickN.dot(camDir)
+  pickV.project(camera)
+  out.x = (pickV.x + 1) / 2 * innerWidth; out.y = (1 - pickV.y) / 2 * innerHeight; out.f = facing
+  return out
+}
+function nearestPick(x, y) {
+  let best = null, bd = 30 * 30
+  const o = {}
+  for (const pk of picks) {
+    screenOf(pk, o)
+    if (o.f < 0.12) continue
+    const d = (o.x - x) ** 2 + (o.y - y) ** 2
+    if (d < bd) { bd = d; best = pk }
+  }
+  return best
+}
+function openCard(pk) {
+  sel = { pk, t0: performance.now() }
+  card.classList.remove('show'); void card.offsetWidth
+  let html = `<button class="x" aria-label="Close">×</button><small>${pk.kind === 'src' ? 'sending city' : 'receiving city · Uzbekistan'}</small><h3>${pk.name}</h3>`
+  if (pk.kind === 'src') {
+    const c = pk.c
+    html += `<div class="ctry">${c.flag} ${c.name}</div>`
+    if (c.total) {
+      const share = c.total / 18.9e9 * 100
+      html += `<div class="big" data-count="${c.total}">$0</div><div class="lbl">sent to Uzbekistan in 2025 from all of ${c.name}${c.est ? ' (estimate: 78% of the total)' : ''}</div>
+        <div class="row"><span>Every second</span><b>${usd(c.total / (365 * 24 * 3600), 2)}</b></div>
+        <div class="row"><span>Since you opened this page</span><b class="live-c" data-ps="${c.total / (365 * 24 * 3600)}">$0</b></div>
+        <div class="row"><span>Lost to fees + rates (est.)</span><b class="red-t live-c" data-ps="${c.total / (365 * 24 * 3600) * (LIVE.feeRate + LIVE.fxRate)}" data-d="2">$0</b></div>
+        <div class="bar2"><i style="--w:${Math.max(1.5, share).toFixed(1)}%"></i></div><div class="lbl">${share.toFixed(1)}% of all money sent home</div>
+        <p class="note">Official numbers are per country, not per city.</p>`
+    } else {
+      html += `<div class="big">n/a</div><div class="lbl">The Central Bank doesn't publish a separate number for ${c.name}. It's part of "other countries".</div>`
+    }
+  } else {
+    const [pct, text] = UZ_INFO[pk.name]
+    html += pct != null ? `<div class="big uz-t" data-count="${pct}" data-pct="1">0%</div><div class="lbl">${text}</div>` : `<div class="lbl">${text}</div>`
+    html += `<div class="row"><span>Arriving in Uzbekistan now</span><b class="uz-t">${usd(LIVE.perSec)}/s</b></div>
+      <div class="row"><span>Since you opened this page</span><b class="uz-t live-c" data-ps="${LIVE.perSec}">$0</b></div>`
+  }
+  card.innerHTML = html
+  card.querySelector('.x').addEventListener('click', e => { e.stopPropagation(); closeCard() })
+  card.classList.add('show')
+  sound.ching(pk.kind === 'src' ? 1568 : 1318)
+}
+function closeCard() { sel = null; card.classList.remove('show') }
+function updateCard(now, inFiber) {
+  if (!sel) { selRing.visible = false; return }
+  const o = screenOf(sel.pk, {})
+  const hidden = inFiber || o.f < 0.05
+  card.style.visibility = hidden ? 'hidden' : 'visible'
+  selRing.visible = !hidden
+  selRing.position.copy(sel.pk.pos)
+  const k = ((now - sel.t0) / 900) % 1
+  selRing.scale.setScalar(0.4 + k * 1.4); selRing.material.opacity = 1 - k
+  if (innerWidth > 700) {
+    const w = card.offsetWidth, h = card.offsetHeight
+    let x = o.x + 22, y = o.y - h / 2
+    if (x + w > innerWidth - 50) x = o.x - w - 22
+    y = Math.min(Math.max(70, y), innerHeight - h - 60)
+    card.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`
+  }
+  // animated count-up, then live counters
+  const e = 1 - Math.pow(1 - Math.min(1, (now - sel.t0) / 1400), 3)
+  card.querySelectorAll('[data-count]').forEach(el => {
+    const v = +el.dataset.count * e
+    el.textContent = el.dataset.pct ? v.toFixed(1) + '%' : usd(v)
+  })
+  const sec = (now - LIVE.start) / 1000
+  card.querySelectorAll('.live-c').forEach(el => { el.textContent = usd(+el.dataset.ps * sec, +(el.dataset.d || 0)) })
+}
+addEventListener('click', e => {
+  if (e.target.closest('a, button, .city-card')) return
+  if (sp > 0.665 && sp < 0.785) return
+  const pk = nearestPick(e.clientX, e.clientY)
+  if (pk) openCard(pk); else if (sel) closeCard()
+})
+addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return
+  canvas.style.cursor = !(sp > 0.665 && sp < 0.785) && nearestPick(e.clientX, e.clientY) ? 'pointer' : ''
+})
+addEventListener('keydown', e => { if (e.key === 'Escape') closeCard() })
+
 const S = { coin: false, morph: false, hop: -1, nodes: 0, arrived: false, bit: -1 }
 
 // ---------- scroll + panels ----------
@@ -588,6 +714,12 @@ function frame(now) {
     // migrants
     const mA = win(0.065, 0.2, 0.03), mDraw = smooth(local(0.06, 0.12))
     migrantArcs.forEach(m => { setAlpha(m, mA); m.material.uniforms.uDraw.value = mDraw; m.material.uniforms.uHead.value = time * 0.35 + m.userData.offset })
+    if (sel) migrantArcs.forEach((m, i) => {
+      const hit = sel.pk.kind === 'src' ? i === sel.pk.i : i % UZ_CITIES.length === sel.pk.i
+      if (!hit) { if (mA < 0.5) setAlpha(m, 0); return }
+      setAlpha(m, 1); m.material.uniforms.uDraw.value = 1
+      m.material.uniforms.uHead.value = time * 1.1 + m.userData.offset
+    })
     sourceMarkers.forEach(s => setSpriteAlpha(s, mA))
     setSpriteAlpha(labels.moscow, win(0.08, 0.19))
     sourceLabels.forEach(l => setSpriteAlpha(l, win(0.075, 0.19)))
@@ -718,6 +850,7 @@ function frame(now) {
   updateLive(now)
   hintEl.style.opacity = sp < 0.015 ? '1' : '0'
 
+  updateCard(now, inFiber)
   composer.render()
   requestAnimationFrame(frame)
 }
