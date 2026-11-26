@@ -1,4 +1,5 @@
 name = "beckzodiy-publisher"
+main = "worker/index.js"
 compatibility_date = "2025-08-23"
 workers_dev = true
 
@@ -7,7 +8,18 @@ routes = [
   { pattern = "www.beckzodiy.com", custom_domain = true }
 ]
 
-# Static site only: every path serves the 3D page.
+# Static 3D page. The Worker only runs for /api/* and /admin (visit log + admin panel).
 [assets]
 directory = "./public"
+binding = "ASSETS"
 not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/admin", "/admin/*"]
+
+# Visit log: SQLite inside a Durable Object (created automatically on deploy).
+[[durable_objects.bindings]]
+name = "STATS"
+class_name = "Stats"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Stats"]
