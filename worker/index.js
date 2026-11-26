@@ -2,8 +2,6 @@
 //   POST /api/hit      – the page reports a visit (IP comes from Cloudflare's CF-Connecting-IP header)
 //   POST /api/update   – how far the visitor scrolled and whether they turned sound on
 //   POST /api/consent  – answer to the consent banner (shown only in CONSENT_COUNTRIES)
-//   POST /api/forget   – deletes every visit from the caller's IP
-//   GET  /privacy      – privacy notice
 //   GET  /admin        – password-protected stats (Basic auth, password = ADMIN_PASSWORD secret)
 // Everything else is served from ./public as before.
 import { DurableObject } from 'cloudflare:workers'
@@ -15,7 +13,6 @@ const CONSENT_COOKIE = 'bz_consent' // 'yes' or 'no'
 // Visitors from these countries (by Cloudflare's IP lookup) must say OK before anything is stored.
 // Add more two-letter codes here, or use ['*'] to ask everyone.
 const CONSENT_COUNTRIES = ['AE']
-const OWNER = 'Bekzod Tursunboyev, Dubai, UAE'
 
 export class Stats extends DurableObject {
   constructor(ctx, env) {
@@ -42,12 +39,6 @@ export class Stats extends DurableObject {
       'UPDATE visits SET scroll = MAX(COALESCE(scroll, 0), ?), sound = MAX(COALESCE(sound, 0), ?) WHERE vid = ? AND ts > ?',
       scroll, sound, vid, Date.now() - 864e5,
     )
-  }
-
-  forget(ip) {
-    const c = this.sql.exec('DELETE FROM visits WHERE ip = ?', ip)
-    c.toArray()
-    return c.rowsWritten
   }
 
   stats(ip) {
@@ -132,16 +123,7 @@ export default {
         return new Response(null, { status: 204 })
       }
 
-      if (p === '/api/forget') {
-        const n = await stub(env).forget(req.headers.get('CF-Connecting-IP') || 'unknown')
-        return json({ deleted: n }, { 'Set-Cookie': consentCookie('no') })
-      }
-
       return new Response(null, { status: 404 })
-    }
-
-    if (p === '/privacy') {
-      return new Response(privacyPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } })
     }
 
     if (p === '/admin' || p.startsWith('/admin/')) {
@@ -180,34 +162,6 @@ const BASE_CSS = `:root{color-scheme:dark;--bg:#04050c;--card:#0c1020;--line:#1c
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 ui-sans-serif,system-ui,sans-serif;padding:24px;max-width:1100px;margin:auto}
 h1{font-size:20px;margin:0 0 18px}h2{font-size:15px;margin:28px 0 10px;color:var(--mut);font-weight:600}
 a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}`
-
-function privacyPage() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Privacy · beckzodiy.com</title><style>${BASE_CSS}body{max-width:720px}li{margin:6px 0}
-button{font:inherit;padding:10px 18px;border-radius:999px;border:1px solid #ff6b5e;background:transparent;color:#ff6b5e;cursor:pointer}
-#done{color:var(--acc);margin-left:12px}</style></head><body>
-<h1>Privacy notice</h1>
-<p><b>Who:</b> ${OWNER} runs beckzodiy.com and is responsible for the data below.</p>
-<h2>What is saved</h2>
-<ul>
-<li>Your IP address</li>
-<li>Time of the visit, the page, and the site you came from (referrer)</li>
-<li>Your browser and device type (user agent)</li>
-<li>How far you scrolled, and whether you turned sound on</li>
-</ul>
-<p>No name, no email, no location lookup, no advertising or tracking cookies, no third-party analytics.</p>
-<h2>Why</h2>
-<p>Only to count visitors and see how far people read. If you are in the UAE, nothing is saved unless you press OK on the banner.</p>
-<h2>Where and how long</h2>
-<p>Stored on Cloudflare's servers. Deleted automatically after ${KEEP_DAYS} days. Never sold or shared.</p>
-<h2>Your rights</h2>
-<p>You can withdraw consent and delete everything saved from your current IP address now:</p>
-<p><button id="del">Delete my data</button><span id="done"></span></p>
-<p style="color:var(--mut);font-size:12px;margin-top:28px">Last updated 26 November 2026.</p>
-<script>document.getElementById('del').onclick=async()=>{const r=await fetch('/api/forget',{method:'POST'}).then(r=>r.json()).catch(()=>null);
-document.getElementById('done').textContent=r?'Done. '+r.deleted+' visit(s) deleted, and nothing more will be saved from this browser.':'Something went wrong, try again.'}</script>
-</body></html>`
-}
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
 const when = ts => new Date(ts).toLocaleString('en-GB', { timeZone: 'Asia/Dubai', dateStyle: 'medium', timeStyle: 'short' })

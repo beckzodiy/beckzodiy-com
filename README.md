@@ -17,7 +17,7 @@ Every push to `main` deploys via `.github/workflows/deploy.yml`.
 
 `/admin` shows visitor stats: views, unique IPs, views per day, how far people scroll, how many turn sound on, every IP with first/last seen, referrers and the latest visits (click an IP to see all its visits). `public/track.js` reports scroll depth and sound.
 
-Visitors from the UAE (Cloudflare country `AE`) see a consent banner and are only logged after pressing OK; change `CONSENT_COUNTRIES` in `worker/index.js` to add countries or `['*']` to ask everyone. `/privacy` is the privacy notice, with a button that deletes all visits from the visitor's IP. Visits are logged by `worker/index.js` into a SQLite Durable Object and kept for 90 days. Opening `/admin` marks your browser so your own visits aren't counted.
+Visitors from the UAE (Cloudflare country `AE`) see a consent banner and are only logged after pressing OK; change `CONSENT_COUNTRIES` in `worker/index.js` to add countries or `['*']` to ask everyone. Visits are logged by `worker/index.js` into a SQLite Durable Object and kept for 90 days. Opening `/admin` marks your browser so your own visits aren't counted.
 
 Login is HTTP Basic auth (any username). Set the password once:
 
