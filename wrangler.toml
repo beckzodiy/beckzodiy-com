@@ -8,12 +8,12 @@ routes = [
   { pattern = "www.beckzodiy.com", custom_domain = true }
 ]
 
-# Static 3D page. The Worker only runs for /api/*, /admin and /privacy (visit log, admin panel, privacy notice).
+# Static 3D page. The Worker only runs for /api/* and /admin (visit log + admin panel).
 [assets]
 directory = "./public"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
-run_worker_first = ["/api/*", "/admin", "/admin/*", "/privacy"]
+run_worker_first = ["/api/*", "/admin", "/admin/*"]
 
 # Visit log: SQLite inside a Durable Object (created automatically on deploy).
 [[durable_objects.bindings]]

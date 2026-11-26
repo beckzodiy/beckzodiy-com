@@ -44,7 +44,6 @@
       .consent{position:fixed;z-index:50;left:50%;bottom:20px;transform:translateX(-50%);width:min(560px,calc(100% - 24px));
         background:rgba(8,10,24,.94);border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:16px 18px;
         font:12px/1.6 "JetBrains Mono",ui-monospace,monospace;color:#c9d0ea;backdrop-filter:blur(8px);box-shadow:0 12px 40px rgba(0,0,0,.5)}
-      .consent a{color:#2fe6a7}
       .consent div{display:flex;gap:10px;margin-top:12px;justify-content:flex-end}
       .consent button{font:inherit;letter-spacing:.08em;text-transform:uppercase;padding:9px 16px;border-radius:999px;cursor:pointer;
         border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#f1f4ff}
@@ -55,7 +54,7 @@
     box.setAttribute('role', 'dialog')
     box.setAttribute('aria-label', 'Visitor stats consent')
     box.innerHTML = `To count visitors, this site can save your <b>IP address</b>, how far you scroll and whether you turn sound on.
-      Kept 90 days, never sold or shared. <a href="/privacy" target="_blank" rel="noopener">Privacy notice</a>
+      Kept 90 days, never sold or shared.
       <div><button class="no">No thanks</button><button class="yes">OK</button></div>`
     document.body.appendChild(box)
     box.querySelector('.yes').onclick = () => { box.remove(); post('/api/consent', { ...visit, yes: true }).then(started).catch(() => {}) }
